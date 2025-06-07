@@ -1,0 +1,35 @@
+# --- Конфігурація підключення до Бази Даних ---
+# Використовуйте URL вашої бази даних
+[database]
+url = "postgres://user:password@localhost/mydatabase"
+
+# --- Конфігурація Gemini API (опціонально) ---
+[gemini]
+# Модель, яку будемо використовувати.
+model = "gemini-1.5-flash-latest"
+
+# --- План заповнення (використовується в режимі з файлу) ---
+# Кількість рядків для заповнення по замовчуванню, якщо не вказано для таблиці
+default_rows = 10
+
+[[seeding_plan]]
+# Таблиця для заповнення
+table = "users"
+# Кількість рядків, яку потрібно згенерувати
+rows = 50
+# Опціонально: можна вказати конкретні поля для заповнення
+# columns = ["username", "email", "created_at"]
+
+[[seeding_plan]]
+table = "products"
+rows = 100
+# Якщо поле має специфічну семантику, можна вказати, як його генерувати
+[seeding_plan.column_overrides]
+description = { generator = "gemini", prompt = "Напиши короткий, але привабливий опис для високотехнологічного гаджета" }
+name = { generator = "fake", type = "bs" } # Використаємо fake::Bs
+
+[[seeding_plan]]
+# Зв'язуюча таблиця для many-to-many
+# Утиліта сама зрозуміє, що треба заповнити users та roles перед цим
+table = "user_roles"
+rows = 70 # Створити 70 зв'язків

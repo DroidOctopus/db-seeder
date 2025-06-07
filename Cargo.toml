@@ -1,0 +1,45 @@
+[package]
+name = "db_seeder"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+# Асинхронність
+tokio = { version = "1", features = ["full"] }
+
+# Робота з БД (обираємо фічі для postgres, але можна додати mysql, sqlite)
+sqlx = { version = "0.7", features = ["runtime-tokio", "postgres", "macros", "json"] }
+
+# CLI
+clap = { version = "4", features = ["derive"] }
+
+# Конфігурація
+config = { version = "0.14", features = ["toml"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1.0"
+
+# Інтерактивність
+dialoguer = { version = "0.11", features = ["fuzzy-select"] }
+console = "0.15"
+
+# Генерація даних
+# ВАЖЛИВО: Додаємо фічу "uuid"
+fake = { version = "2.9", features = ["derive", "chrono", "uuid"] }
+rand = "0.8"
+
+# API запити
+reqwest = { version = "0.12", features = ["json"] }
+
+# Робота з графами
+petgraph = "0.6"
+
+# Змінні середовища
+dotenvy = "0.15"
+
+# Помилки
+thiserror = "1.0"
+anyhow = "1.0"
+
+# ВАЖЛИВО: Додаємо відсутні залежності
+indicatif = { version = "0.17", features = ["tokio"] }
+chrono = { version = "0.4", features = ["serde"] }
