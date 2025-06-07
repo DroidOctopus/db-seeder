@@ -22,7 +22,7 @@ impl EntityGenerator {
         &self,
         fields: &[FieldTemplate],
         pools: &DataPools,
-        foreign_keys: &DataPools,
+        all_pks: &DataPools,
     ) -> AppResult<GeneratedEntity> {
         let mut entity = GeneratedEntity::new();
         let mut rng = rand::thread_rng();
@@ -60,10 +60,20 @@ impl EntityGenerator {
                     json!(result)
                 }
                 "fk" => {
-                    let parent_table = field.params.get("references").and_then(|v| v.as_str()).ok_or_else(|| AppError::Custom("`references` не вказано для `fk`".to_string()))?;
-                    let fk_pool = foreign_keys.get(parent_table).ok_or_else(|| AppError::DependencyNotFound(parent_table.to_string()))?;
-                    if fk_pool.is_empty() { return Err(AppError::Custom(format!("Батьківський пул ключів для '{}' порожній", parent_table))); }
-                    fk_pool[rng.gen_range(0..fk_pool.len())].clone()
+                    let parent_table = field.params.get("references").and_then(|v| v.as_str())
+                        .ok_or_else(|| AppError::Custom("`references` не вказано для `fk`".to_string()))?;
+                    
+                    if let Some(pk_pool) = all_pks.get(parent_table) {
+                        if pk_pool.is_empty() {
+                            json!(Value::Null)
+                        } else {
+                            pk_pool[rng.gen_range(0..pk_pool.len())].clone()
+                        }
+                    } else {
+                        // Якщо пулу взагалі немає, це помилка залежностей.
+                        // Це може статися, якщо батьківська таблиця не була в плані.
+                        return Err(AppError::DependencyNotFound(parent_table.to_string()));
+                    }
                 }
                 "words" => {
                     let min = field.params.get("min").and_then(|v| v.as_u64()).unwrap_or(2) as usize;
@@ -111,7 +121,9 @@ impl EntityGenerator {
                 }
                 _ => return Err(AppError::UnknownGenerator(field.generator.clone())),
             };
-            entity.insert(field.column_name.clone(), value);
+            if !value.is_null() {
+                entity.insert(field.column_name.clone(), value);
+            }
         }
         Ok(entity)
     }

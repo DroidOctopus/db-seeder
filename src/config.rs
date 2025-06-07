@@ -10,12 +10,13 @@ pub struct ColumnOverride {
     pub kind: Option<String>,
 }
 
-#[derive(Debug, Deserialize, Clone)]
+#[derive(Debug, Deserialize, Clone, Default)]
 pub struct SeedingTask {
     pub table: String,
     pub rows: u32,
     // Ці поля є залишками старої системи, але ми їх залишимо,
     // щоб не ламати парсинг старих конфігів. Вони ігноруються в новій логіці.
+    #[serde(default)]
     pub columns: Option<Vec<String>>,
     #[serde(default)]
     pub column_overrides: HashMap<String, ColumnOverride>,
