@@ -53,11 +53,12 @@ pub struct GeminiAnalyzer {
     http_client: Client,
     api_key: String,
     model: String,
+    temperature: f32,
 }
 
 impl GeminiAnalyzer {
-    pub fn new(api_key: String, model: String) -> Self {
-        Self { http_client: Client::new(), api_key, model }
+    pub fn new(api_key: String, model: String, temperature: f32) -> Self {
+        Self { http_client: Client::new(), api_key, model, temperature }
     }
 
     /// Запитує у Gemini архітектурний план
@@ -149,7 +150,10 @@ impl GeminiAnalyzer {
         let url = format!("https://generativelanguage.googleapis.com/v1beta/models/{}:generateContent?key={}", self.model, self.api_key);
         let body = json!({
             "contents": [{ "parts": [{ "text": prompt }] }],
-            "generationConfig": { "response_mime_type": "application/json" }
+            "generationConfig": {
+                "temperature": self.temperature,
+                "response_mime_type": "application/json"
+            }
         });
 
         let response = self.http_client.post(&url).json(&body).send().await?;

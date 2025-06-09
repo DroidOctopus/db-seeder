@@ -37,7 +37,11 @@ impl EntityGenerator {
                 "from_pool" => {
                     let pool_name = field.params.get("pool_name").and_then(|v| v.as_str()).ok_or_else(|| AppError::Custom("`pool_name` не вказано для генератора `from_pool`".to_string()))?;
                     let pool = pools.get(pool_name).ok_or_else(|| AppError::Custom(format!("Пул даних '{}' не знайдено", pool_name)))?;
-                    pool[rng.gen_range(0..pool.len())].clone()
+                    if pool.is_empty() {
+                       json!(Value::Null) // Повертаємо null, якщо пул порожній
+                    } else {
+                        pool[rng.gen_range(0..pool.len())].clone()
+                    }
                 }
                 "template" => {
                     let format = field.params.get("format").and_then(|v| v.as_str()).ok_or_else(|| AppError::Custom("`format` не вказано для `template`".to_string()))?;
@@ -82,9 +86,13 @@ impl EntityGenerator {
                     json!(text.join(" "))
                 }
                 "number_range" => {
-                    let min = field.params.get("min").and_then(|v| v.as_i64()).unwrap_or(0);
-                    let max = field.params.get("max").and_then(|v| v.as_i64()).unwrap_or(100);
-                    json!(rng.gen_range(min..=max))
+                    let mut min = field.params.get("min").and_then(|v| v.as_i64()).unwrap_or(0);
+                    let mut max = field.params.get("max").and_then(|v| v.as_i64()).unwrap_or(100);
+                    if min > max {
+                        // Якщо Gemini переплутав min та max, міняємо їх місцями
+                        std::mem::swap(&mut min, &mut max);
+                    }
+                    json!(rng.gen_range(min..=max)) // ..= включає max, тому min == max є валідним
                 }
                 "boolean" => {
                     let true_chance = field.params.get("true_chance").and_then(|v| v.as_f64()).unwrap_or(0.5);

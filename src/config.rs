@@ -32,6 +32,7 @@ pub struct DatabaseConfig {
 #[derive(Debug, Deserialize)]
 pub struct GeminiConfig {
     pub model: String,
+    pub temperature: Option<f32>,
 }
 
 // ВИПРАВЛЕНО: Нова секція для налаштувань генерації

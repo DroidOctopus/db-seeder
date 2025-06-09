@@ -3,7 +3,7 @@ use crate::config::SeedingTask;
 use crate::db::{DbClient, DbSchema};
 use crate::entity_generator::{DataPools, EntityGenerator};
 use crate::error::{AppError, AppResult};
-use crate::gemini_analyzer::{ArchitecturalPlan, GeminiAnalyzer};
+use crate::gemini_analyzer::GeminiAnalyzer;
 use console::style;
 use indicatif::ProgressBar;
 use petgraph::algo::toposort;
@@ -44,20 +44,23 @@ impl Seeder {
     }
 
     // Ця функція використовується всередині `run`
-    fn build_plan_dependency_graph<'a>(&self, plan: &'a ArchitecturalPlan) -> DiGraphMap<&'a str, ()> {
+    fn build_plan_dependency_graph<'a>(&'a self, plan_tasks: &'a [SeedingTask]) -> DiGraphMap<&'a str, ()> {
         let mut graph = DiGraphMap::new();
         
-        let entity_map: HashMap<&str, &'a str> = plan.entity_templates.iter()
-            .map(|t| (t.target_table.as_str(), t.entity_name.as_str()))
-            .collect();
-
-        for &entity_name in entity_map.values() {
-            graph.add_node(entity_name);
+        // Додаємо в граф тільки ті таблиці, які є в плані
+        let tables_in_plan: HashSet<&str> = plan_tasks.iter().map(|t| t.table.as_str()).collect();
+        for &table_name in &tables_in_plan {
+            graph.add_node(table_name);
         }
 
+        // Додаємо ребра на основі зовнішніх ключів, але тільки для таблиць з плану
         for fk in &self.schema.foreign_keys {
-            if let (Some(&parent_entity), Some(&child_entity)) = (entity_map.get(fk.to_table.as_str()), entity_map.get(fk.from_table.as_str())) {
-                graph.add_edge(parent_entity, child_entity, ());
+            let parent_table = fk.to_table.as_str();
+            let child_table = fk.from_table.as_str();
+
+            if tables_in_plan.contains(parent_table) && tables_in_plan.contains(child_table) {
+                // Дитина (from_table) залежить від батька (to_table)
+                graph.add_edge(parent_table, child_table, ());
             }
         }
         graph
@@ -68,9 +71,10 @@ impl Seeder {
             .map_err(|_| AppError::Custom("Змінна середовища GEMINI_API_KEY не встановлена".to_string()))?;
         
         let model = config.gemini.as_ref().map_or("gemini-1.5-flash-latest".to_string(), |g| g.model.clone());
+        let temperature = config.gemini.as_ref().and_then(|g| g.temperature).unwrap_or(0.7);
         let lang = config.generation.as_ref().map_or("en", |g| &g.language);
         
-        let analyzer = GeminiAnalyzer::new(gemini_key, model);
+        let analyzer = GeminiAnalyzer::new(gemini_key, model, temperature);
 
         println!("🧠 Gemini розробляє архітектурний план (мова: {})...", lang);
         
@@ -93,7 +97,7 @@ impl Seeder {
             for (pool_name, pool_config) in &architectural_plan.data_pools {
                 bar.set_message(format!("Генерую пул '{}'", pool_name));
                 let pool_data = analyzer.get_pool_data(&pool_config.gemini_prompt_for_pool).await?;
-                let pool_values: Vec<Value> = pool_data.into_iter().map(Value::String).collect();
+                let pool_values: Vec<Value> = pool_data.into_iter().map(|s| serde_json::from_str(&s).unwrap_or(Value::String(s))).collect();
                 data_pools.insert(pool_name.clone(), pool_values);
                 bar.inc(1);
             }
@@ -103,23 +107,25 @@ impl Seeder {
         let entity_generator = EntityGenerator::new();
         let mut generated_pks: DataPools = HashMap::new();
         
-        let graph = self.build_plan_dependency_graph(&architectural_plan);
-        let sorted_entities = toposort(&graph, None).map_err(|_| AppError::CyclicDependency)?;
+        let graph = self.build_plan_dependency_graph(plan_tasks);
+        let sorted_tables = toposort(&graph, None).map_err(|_| AppError::CyclicDependency)?;
 
-        println!("\n🚀 Порядок заповнення сутностей визначено:");
-        for (i, entity_name) in sorted_entities.iter().enumerate() {
-            println!("   {}. {}", i + 1, style(entity_name).cyan());
+        println!("\n🚀 Порядок заповнення таблиць визначено:");
+        for (i, table_name) in sorted_tables.iter().enumerate() {
+            println!("   {}. {}", i + 1, style(table_name).cyan());
         }
 
-        for entity_name in sorted_entities {
-            if let Some(entity_template) = architectural_plan.entity_templates.iter().find(|e| e.entity_name == *entity_name) {
-                if let Some(task) = plan_tasks.iter().find(|t| t.table == entity_template.target_table) {
-                    println!("\n🌱 Заповнюю таблицю '{}' ({} рядків) сутностями '{}'...", style(&task.table).bold(), task.rows, style(entity_name).cyan());
-                    
+        for table_name in sorted_tables {
+            // Знаходимо і задачу, і шаблон сутності для поточної таблиці
+            if let Some(task) = plan_tasks.iter().find(|t| t.table == table_name) {
+                if let Some(entity_template) = architectural_plan.entity_templates.iter().find(|e| e.target_table == table_name) {
+                    println!("\n🌱 Заповнюю таблицю '{}' ({} рядків) сутностями '{}'...", style(table_name).bold(), task.rows, style(&entity_template.entity_name).cyan());
                     let pks = self.seed_table(task, entity_template, &entity_generator, &data_pools, &generated_pks).await?;
                     if !pks.is_empty() {
-                        generated_pks.insert(entity_template.target_table.clone(), pks);
+                        generated_pks.insert(table_name.to_string(), pks);
                     }
+                } else {
+                    println!("{}", style(format!("⚠️  Пропускаю таблицю '{}', оскільки для неї не знайдено шаблон сутності в плані Gemini.", table_name)).yellow());
                 }
             }
         }
@@ -207,6 +213,16 @@ impl Seeder {
                                 false
                             };
                             query = query.bind(bool_val);
+                        }
+                        "numeric" | "decimal" | "real" | "double precision" => {
+                            let float_val = if let Some(f) = val.as_f64() {
+                                f
+                            } else if let Some(s) = val.as_str() {
+                                s.parse::<f64>().unwrap_or(0.0)
+                            } else {
+                                0.0
+                            };
+                            query = query.bind(float_val);
                         }
                         "character varying" | "text" | "varchar" | "uuid" | "timestamp with time zone" | "timestamp without time zone" | "date" => {
                             // Для цих типів ми покладаємося на кастинг в SQL (::timestamp, ::uuid)

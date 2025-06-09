@@ -2,7 +2,7 @@
 use sqlx::{postgres::PgRow, Pool, Postgres, Row};
 use std::collections::HashMap;
 
-use crate::error::{AppError, AppResult};
+use crate::error::AppResult;
 
 // --- Структури для опису схеми БД ---
 

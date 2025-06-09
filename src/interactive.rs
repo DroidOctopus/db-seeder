@@ -58,7 +58,7 @@ pub fn run_interactive_mode(
         println!("(використовуйте ↑/↓, 'пробіл' для вибору, 'enter' для продовження, 'q' для виходу)\n");
 
         let mut items = Vec::new();
-        for (i, &table_name) in table_names.iter().enumerate() {
+        for (_i, &table_name) in table_names.iter().enumerate() {
             let prefix = if selections.contains(table_name) { "[*]" } else { "[ ]" };
             
             // Шукаємо залежності (батьків)
